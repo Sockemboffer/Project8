@@ -2,11 +2,13 @@
 #pragma warning(push, 3)
 #include <windows.h>
 #pragma warning(pop)
+#include <stdint.h>
 #include "Main.h" // My files come after windows.h (has important definitions that our .h needs)
 
 HWND gGameWindow; // NULL or 0 by default
 BOOL gGameIsRunning; // global vars are automaticaly initialized to 0, no need to initialize unless you want somthing other than 0
-GAMEBITMAP gDrawingSurface = { 0 };
+GAMEBITMAP gBackBuffer = { 0 };
+MONITORINFO gMonitorInfo = { sizeof(MONITORINFO) };
 // Windows is native Unicode OS
 // L is Unicode string instead of ASCII (also called multi-byte sometimes)
 // VS tip: C/C++ doesn't show up in properties until you have atleast one file of that type
@@ -24,27 +26,24 @@ INT WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR CommandLine, IN
     UNREFERENCED_PARAMETER(CommandLine);
     UNREFERENCED_PARAMETER(CommandShow);
 
-    if (GameIsAlreadyRunning() == TRUE)
-    {
+    if (GameIsAlreadyRunning() == TRUE) {
         MessageBoxA(NULL, "Another instance of the game is already running.", "Error.", MB_ICONEXCLAMATION | MB_OK);
         goto Exit;
     }
 
-    if (CreateMainGameWindow() != ERROR_SUCCESS)
-    {
+    if (CreateMainGameWindow() != ERROR_SUCCESS) {
         goto Exit;
     }
 
-    gDrawingSurface.BitmapInfo.bmiHeader.biSize = sizeof(gDrawingSurface.BitmapInfo.bmiHeader);
-    gDrawingSurface.BitmapInfo.bmiHeader.biWidth = GAME_RES_WIDTH;
-    gDrawingSurface.BitmapInfo.bmiHeader.biHeight = GAME_RES_HEIGHT;
-    gDrawingSurface.BitmapInfo.bmiHeader.biBitCount = GAME_BPP;
-    gDrawingSurface.BitmapInfo.bmiHeader.biCompression = BI_RGB;
-    gDrawingSurface.BitmapInfo.bmiHeader.biPlanes = 1;
+    gBackBuffer.BitmapInfo.bmiHeader.biSize = sizeof(gBackBuffer.BitmapInfo.bmiHeader);
+    gBackBuffer.BitmapInfo.bmiHeader.biWidth = GAME_RES_WIDTH;
+    gBackBuffer.BitmapInfo.bmiHeader.biHeight = GAME_RES_HEIGHT;
+    gBackBuffer.BitmapInfo.bmiHeader.biBitCount = GAME_BPP;
+    gBackBuffer.BitmapInfo.bmiHeader.biCompression = BI_RGB;
+    gBackBuffer.BitmapInfo.bmiHeader.biPlanes = 1;
     // Allocating larger than 64Kb of data, use VirtualAlloc (Use HeapAlloc if only need like 2 or 3 bytes)
     // VirtualAlloc returns NULL if fails, need to handle
-    if ((gDrawingSurface.Memory = VirtualAlloc(NULL, GAME_DRAWING_AREA_MEMORY_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE)) == NULL) 
-    {
+    if ((gBackBuffer.Memory = VirtualAlloc(NULL, GAME_DRAWING_AREA_MEMORY_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE)) == NULL) {
         MessageBoxA(NULL, "Failed to allocate memory for drawing surface.", "Error.", MB_ICONEXCLAMATION | MB_OK);
         goto Exit;
     }
@@ -91,6 +90,7 @@ DWORD CreateMainGameWindow(void)
     // Everything in windows is a window when progrmming in Win32, buttons, dropdowns, etc
     WNDCLASSEXA WindowClass = { 0 }; // braces to initialize data structures
     // very common in windows data structures that the first thing is the size of that data structure
+    
     WindowClass.cbSize = sizeof(WNDCLASSEXA); // 'cb' is counts in bytes of data structure
     WindowClass.style = 0;
     WindowClass.lpfnWndProc = MainWindowProc; // long pointer to a function
@@ -99,12 +99,11 @@ DWORD CreateMainGameWindow(void)
     WindowClass.hIcon = LoadIconA(NULL, IDI_APPLICATION); // IDI_APPLICATION built-in default icon
     WindowClass.hIconSm = LoadIconA(NULL, IDI_APPLICATION);
     WindowClass.hCursor = LoadCursorA(NULL, IDC_ARROW);
-    WindowClass.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1); // color of window
+    WindowClass.hbrBackground = CreateSolidBrush(RGB(255, 0, 255)); // color of window
     WindowClass.lpszMenuName = NULL;
     WindowClass.lpszClassName = GAME_NAME "_WINDOWCLASS";
     
-    if (RegisterClassExA(&WindowClass) == 0) // RegisterClassExA designed to return 0 if fails
-    {
+    if (RegisterClassExA(&WindowClass) == 0) {// RegisterClassExA designed to return 0 if fails
         Result = GetLastError();
         MessageBoxA(NULL, "Window registation failed.", "Error.", MB_ICONEXCLAMATION | MB_OK);
         goto Exit;
@@ -112,12 +111,20 @@ DWORD CreateMainGameWindow(void)
     
     gGameWindow = CreateWindowExA(WS_EX_CLIENTEDGE, WindowClass.lpszClassName, "Title",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 640, 480, NULL, NULL, WindowClass.hInstance, NULL);
-    if (gGameWindow == NULL)
-    {
+    if (gGameWindow == NULL) {
         Result = GetLastError();
         MessageBoxA(NULL, "Window creation failed.", "Error.", MB_ICONEXCLAMATION | MB_OK);
         goto Exit;
     }
+
+    // Returns 0 if fails, however if MS docs say there is no "GetLastError" then we won't know why it failed
+    if (GetMonitorInfoA(MonitorFromWindow(gGameWindow, MONITOR_DEFAULTTOPRIMARY), &gMonitorInfo) == 0) {
+        Result = ERROR_MONITOR_NO_DESCRIPTOR; // choose error that seems like it may fit
+        goto Exit;
+    };
+
+    int MonitorWidth = gMonitorInfo.rcMonitor.left - gMonitorInfo.rcMonitor.right;
+    int MonitorHeight = gMonitorInfo.rcMonitor.bottom - gMonitorInfo.rcMonitor.top;
 Exit:
     return Result;
 }
@@ -128,12 +135,10 @@ BOOL GameIsAlreadyRunning(void)
     // I have the seashell, so I can speak. When you have it, then you can speak.
     // Short for Mutual Exclusion (Mutex)
     Mutex = CreateMutexA(NULL, FALSE, GAME_NAME "_GameMutex");
-    if (GetLastError() == ERROR_ALREADY_EXISTS)
-    {
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
         return TRUE;
-    }
-    else
-    {
+    } 
+    else {
         return FALSE;
     }
 }
@@ -148,5 +153,9 @@ void ProcessPlayerInput(void)
 
 void RenderFrameGraphics(void) 
 {
-    
+    // Whenever you get a device context, always remember to release when finished
+    HDC DeviceContext = GetDC(gGameWindow);
+    // DI = device independence
+    StretchDIBits(DeviceContext, 0, 0, 100, 100, 0, 0, 100, 100, gBackBuffer.Memory, &gBackBuffer.BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+    ReleaseDC(gGameWindow, DeviceContext);
 }
