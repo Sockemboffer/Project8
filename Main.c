@@ -9,6 +9,8 @@ HWND gGameWindow; // NULL or 0 by default
 BOOL gGameIsRunning; // global vars are automaticaly initialized to 0, no need to initialize unless you want somthing other than 0
 GAMEBITMAP gBackBuffer = { 0 };
 MONITORINFO gMonitorInfo = { sizeof(MONITORINFO) };
+int32_t gMonitorWidth = { 0 };
+int32_t gMonitorHeight = { 0 };
 // Windows is native Unicode OS
 // L is Unicode string instead of ASCII (also called multi-byte sometimes)
 // VS tip: C/C++ doesn't show up in properties until you have atleast one file of that type
@@ -102,6 +104,9 @@ DWORD CreateMainGameWindow(void)
     WindowClass.hbrBackground = CreateSolidBrush(RGB(255, 0, 255)); // color of window
     WindowClass.lpszMenuName = NULL;
     WindowClass.lpszClassName = GAME_NAME "_WINDOWCLASS";
+
+    // Manifest is an XML document that is embedded in with the program
+    //SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
     
     if (RegisterClassExA(&WindowClass) == 0) {// RegisterClassExA designed to return 0 if fails
         Result = GetLastError();
@@ -123,8 +128,18 @@ DWORD CreateMainGameWindow(void)
         goto Exit;
     };
 
-    int MonitorWidth = gMonitorInfo.rcMonitor.left - gMonitorInfo.rcMonitor.right;
-    int MonitorHeight = gMonitorInfo.rcMonitor.bottom - gMonitorInfo.rcMonitor.top;
+    gMonitorWidth = gMonitorInfo.rcMonitor.right - gMonitorInfo.rcMonitor.left;
+    gMonitorHeight = gMonitorInfo.rcMonitor.bottom - gMonitorInfo.rcMonitor.top;
+
+    if (SetWindowLongPtrA(gGameWindow, GWL_STYLE, (WS_OVERLAPPEDWINDOW | WS_VISIBLE) & ~WS_OVERLAPPEDWINDOW) == 0) {
+        Result = GetLastError();
+        goto Exit;
+    };
+    
+    if (SetWindowPos(gGameWindow, HWND_TOP, gMonitorInfo.rcMonitor.left, gMonitorInfo.rcMonitor.top, gMonitorWidth, gMonitorHeight, SWP_FRAMECHANGED) == 0) {
+        Result = GetLastError();
+        goto Exit;
+    };
 Exit:
     return Result;
 }
@@ -144,7 +159,7 @@ BOOL GameIsAlreadyRunning(void)
 }
 void ProcessPlayerInput(void) 
 {
-    int EscapeKeyIsDown = GetAsyncKeyState(VK_ESCAPE);
+    int16_t EscapeKeyIsDown = GetAsyncKeyState(VK_ESCAPE);
     if (EscapeKeyIsDown)
     {
         SendMessageA(gGameWindow, WM_CLOSE, 0, 0);
@@ -156,6 +171,6 @@ void RenderFrameGraphics(void)
     // Whenever you get a device context, always remember to release when finished
     HDC DeviceContext = GetDC(gGameWindow);
     // DI = device independence
-    StretchDIBits(DeviceContext, 0, 0, 100, 100, 0, 0, 100, 100, gBackBuffer.Memory, &gBackBuffer.BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+    StretchDIBits(DeviceContext, 0, 0, gMonitorWidth, gMonitorHeight, 0, 0, GAME_RES_WIDTH, GAME_RES_HEIGHT, gBackBuffer.Memory, &gBackBuffer.BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
     ReleaseDC(gGameWindow, DeviceContext);
 }
