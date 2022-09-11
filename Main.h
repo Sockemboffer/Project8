@@ -6,6 +6,7 @@
 #define GAME_BPP		32
 #define GAME_DRAWING_AREA_MEMORY_SIZE (GAME_RES_WIDTH * GAME_RES_HEIGHT * (GAME_BPP/8))
 #define CALCULATE_AVG_FPS_EVERY_X_FRAMES 100
+#define TARGET_MICROSECONDS_PER_FRAME 16667
 
 #pragma warning(disable: 4820) // warning about structure padding
 #pragma warning(disable: 5045) // warning about spectors
@@ -25,12 +26,9 @@ typedef struct PIXEL32 {
 
 typedef struct GAMEPERFDATA {
 	uint64_t TotalFramesRendered;
-	uint32_t RawFramesPerSecondAverage;
-	uint32_t FramesPerSecondAverage;
-	LARGE_INTEGER PerfFrequency;
-	LARGE_INTEGER FrameStart;
-	LARGE_INTEGER FrameEnd;
-	LARGE_INTEGER ElapsedMicrosecondsPerFrame;
+	float RawFPSAverage;
+	float CookedFPSAverage;
+	int64_t PerfFrequency;
 	MONITORINFO MonitorInfo;
 	int32_t MonitorWidth;
 	int32_t MonitorHeight;

@@ -26,6 +26,13 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
     UNREFERENCED_PARAMETER(CommandLine);
     UNREFERENCED_PARAMETER(CommandShow);
 
+    MSG Message = { 0 };
+    int64_t FrameStart = 0;
+    int64_t FrameEnd = 0;
+	int64_t ElapsedMicrosecondsPerFrame;
+    int64_t ElapsedMicrosecondsPerFrameAccumulatorRaw = 0;
+    int64_t ElapsedMicrosecondsPerFrameAccumulatorCooked = 0;
+
     if (GameIsAlreadyRunning() == TRUE) {
         MessageBoxA(NULL, "Another instance of the game is already running.", "Error.", MB_ICONEXCLAMATION | MB_OK);
         goto Exit;
@@ -36,7 +43,7 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
     }
 
     // Only needs to be called once
-    QueryPerformanceFrequency(&gPerformanceData.PerfFrequency);
+    QueryPerformanceFrequency((LARGE_INTEGER*)&gPerformanceData.PerfFrequency);
 
     gBackBuffer.BitmapInfo.bmiHeader.biSize = sizeof(gBackBuffer.BitmapInfo.bmiHeader);
     gBackBuffer.BitmapInfo.bmiHeader.biWidth = GAME_RES_WIDTH;
@@ -51,11 +58,10 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
         goto Exit;
     }
 
-    MSG Message = { 0 };
     gGameIsRunning = TRUE;
     while (gGameIsRunning == TRUE) 
     {
-        QueryPerformanceCounter(&gPerformanceData.FrameStart);
+        QueryPerformanceCounter((LARGE_INTEGER*)&FrameStart);
 
         while (PeekMessageA(&Message, gGameWindow, 0, 0, PM_REMOVE)) // GetMessageA is a blocking call, not PeekMessageA
         {
@@ -64,18 +70,41 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
 
         ProcessPlayerInput();
         RenderFrameGraphics();
-        QueryPerformanceCounter(&gPerformanceData.FrameEnd);
-        gPerformanceData.ElapsedMicrosecondsPerFrame.QuadPart = gPerformanceData.FrameEnd.QuadPart - gPerformanceData.FrameStart.QuadPart;
-        gPerformanceData.ElapsedMicrosecondsPerFrame.QuadPart *= 1000000;
-        gPerformanceData.ElapsedMicrosecondsPerFrame.QuadPart /= gPerformanceData.PerfFrequency.QuadPart;
-        Sleep(1); // will revisit and tune
-
+        QueryPerformanceCounter((LARGE_INTEGER*)&FrameEnd);
+        ElapsedMicrosecondsPerFrame = FrameEnd - FrameStart;
+        ElapsedMicrosecondsPerFrame *= 1000000;
+        ElapsedMicrosecondsPerFrame /= gPerformanceData.PerfFrequency;
         gPerformanceData.TotalFramesRendered++;
+        ElapsedMicrosecondsPerFrameAccumulatorRaw += ElapsedMicrosecondsPerFrame;
+
+        // Sleep inside until we've hit frame rate target
+        while (ElapsedMicrosecondsPerFrame <= TARGET_MICROSECONDS_PER_FRAME)
+        {
+            Sleep(0); // will revisit and tune
+            ElapsedMicrosecondsPerFrame = FrameEnd - FrameStart;
+            ElapsedMicrosecondsPerFrame *= 1000000;
+            ElapsedMicrosecondsPerFrame /= gPerformanceData.PerfFrequency;
+            QueryPerformanceCounter((LARGE_INTEGER*)&FrameEnd);
+        }
+
+        ElapsedMicrosecondsPerFrameAccumulatorCooked = ElapsedMicrosecondsPerFrame;
+
         if (gPerformanceData.TotalFramesRendered % CALCULATE_AVG_FPS_EVERY_X_FRAMES == 0)
         {
-            char str[64] = { 0 };
-            _snprintf_s(str, _countof(str), _TRUNCATE, "Elapsed microseconds: %lli\n", gPerformanceData.ElapsedMicrosecondsPerFrame.QuadPart);
+            int64_t AverageMicrosecondsPerFrameRaw = ElapsedMicrosecondsPerFrameAccumulatorRaw / CALCULATE_AVG_FPS_EVERY_X_FRAMES;
+            int64_t AverageMicrosecondsPerFrameCooked = ElapsedMicrosecondsPerFrameAccumulatorCooked / CALCULATE_AVG_FPS_EVERY_X_FRAMES;
+
+            gPerformanceData.RawFPSAverage = 1.0f / ((ElapsedMicrosecondsPerFrameAccumulatorRaw / 60) * 0.000001f);
+            gPerformanceData.CookedFPSAverage = 1.0f / ((ElapsedMicrosecondsPerFrameAccumulatorCooked / 60) * 0.000001f);
+            char str[128] = { 0 };
+            _snprintf_s(str, _countof(str), _TRUNCATE,
+                "Avg. per-100 frames raw: %.02fms\tAvg FPS: %.01f\tAvg. Raw: %.01f\n",
+                AverageMicrosecondsPerFrameRaw,
+                gPerformanceData.CookedFPSAverage, 
+                gPerformanceData.RawFPSAverage);
             OutputDebugStringA(str);
+            ElapsedMicrosecondsPerFrameAccumulatorRaw = 0;
+            ElapsedMicrosecondsPerFrameAccumulatorCooked = 0;
         }
     }
 Exit:
