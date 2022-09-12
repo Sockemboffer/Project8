@@ -53,10 +53,13 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
     gBackBuffer.BitmapInfo.bmiHeader.biPlanes = 1;
     // Allocating larger than 64Kb of data, use VirtualAlloc (Use HeapAlloc if only need like 2 or 3 bytes)
     // VirtualAlloc returns NULL if fails, need to handle
-    if ((gBackBuffer.Memory = VirtualAlloc(NULL, GAME_DRAWING_AREA_MEMORY_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE)) == NULL) {
+    gBackBuffer.Memory = VirtualAlloc(NULL, GAME_DRAWING_AREA_MEMORY_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+    if (gBackBuffer.Memory == NULL) {
         MessageBoxA(NULL, "Failed to allocate memory for drawing surface.", "Error.", MB_ICONEXCLAMATION | MB_OK);
         goto Exit;
     }
+
+    memset(gBackBuffer.Memory, 0x7F, GAME_DRAWING_AREA_MEMORY_SIZE);
 
     gGameIsRunning = TRUE;
     while (gGameIsRunning == TRUE) 
@@ -80,29 +83,29 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
         // Sleep inside until we've hit frame rate target
         while (ElapsedMicrosecondsPerFrame <= TARGET_MICROSECONDS_PER_FRAME)
         {
-            Sleep(0); // will revisit and tune
+            Sleep(0); // Could be anywhere between 1ms to full system tick (15ms-ish)
             ElapsedMicrosecondsPerFrame = FrameEnd - FrameStart;
             ElapsedMicrosecondsPerFrame *= 1000000;
             ElapsedMicrosecondsPerFrame /= gPerformanceData.PerfFrequency;
             QueryPerformanceCounter((LARGE_INTEGER*)&FrameEnd);
         }
 
-        ElapsedMicrosecondsPerFrameAccumulatorCooked = ElapsedMicrosecondsPerFrame;
+        ElapsedMicrosecondsPerFrameAccumulatorCooked += ElapsedMicrosecondsPerFrame;
 
-        if (gPerformanceData.TotalFramesRendered % CALCULATE_AVG_FPS_EVERY_X_FRAMES == 0)
+        if ((gPerformanceData.TotalFramesRendered % CALCULATE_AVG_FPS_EVERY_X_FRAMES) == 0)
         {
             int64_t AverageMicrosecondsPerFrameRaw = ElapsedMicrosecondsPerFrameAccumulatorRaw / CALCULATE_AVG_FPS_EVERY_X_FRAMES;
             int64_t AverageMicrosecondsPerFrameCooked = ElapsedMicrosecondsPerFrameAccumulatorCooked / CALCULATE_AVG_FPS_EVERY_X_FRAMES;
 
-            gPerformanceData.RawFPSAverage = 1.0f / ((ElapsedMicrosecondsPerFrameAccumulatorRaw / 60) * 0.000001f);
-            gPerformanceData.CookedFPSAverage = 1.0f / ((ElapsedMicrosecondsPerFrameAccumulatorCooked / 60) * 0.000001f);
-            char str[128] = { 0 };
-            _snprintf_s(str, _countof(str), _TRUNCATE,
-                "Avg. per-100 frames raw: %.02fms\tAvg FPS: %.01f\tAvg. Raw: %.01f\n",
+            gPerformanceData.RawFPSAverage = 1.0f / ((ElapsedMicrosecondsPerFrameAccumulatorRaw / CALCULATE_AVG_FPS_EVERY_X_FRAMES) * 0.000001f);
+            gPerformanceData.CookedFPSAverage = 1.0f / ((ElapsedMicrosecondsPerFrameAccumulatorCooked / CALCULATE_AVG_FPS_EVERY_X_FRAMES) * 0.000001f);
+            char FrameStats[256] = { 0 };
+            _snprintf_s(FrameStats, _countof(FrameStats), _TRUNCATE,
+                "Avg. Microseconds/frame raw: %lld\tAvg FPS: %.01f\tAvg. Raw: %.01f\n",
                 AverageMicrosecondsPerFrameRaw,
                 gPerformanceData.CookedFPSAverage, 
                 gPerformanceData.RawFPSAverage);
-            OutputDebugStringA(str);
+            OutputDebugStringA(FrameStats);
             ElapsedMicrosecondsPerFrameAccumulatorRaw = 0;
             ElapsedMicrosecondsPerFrameAccumulatorCooked = 0;
         }
@@ -142,6 +145,7 @@ DWORD CreateMainGameWindow(void)
     WindowClass.style = 0;
     WindowClass.lpfnWndProc = MainWindowProc; // long pointer to a function
     WindowClass.cbClsExtra = 0;
+    WindowClass.cbWndExtra = 0;
     WindowClass.hInstance = GetModuleHandleA(NULL); // Assumes module? is within program and not another dll
     WindowClass.hIcon = LoadIconA(NULL, IDI_APPLICATION); // IDI_APPLICATION built-in default icon
     WindowClass.hIconSm = LoadIconA(NULL, IDI_APPLICATION);
@@ -160,7 +164,8 @@ DWORD CreateMainGameWindow(void)
     }
 
     gGameWindow = CreateWindowExA(0, WindowClass.lpszClassName, "Title",
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, 640, 480, NULL, NULL, WindowClass.hInstance, NULL);
+        WS_VISIBLE, CW_USEDEFAULT,
+        CW_USEDEFAULT, 640, 480, NULL, NULL, WindowClass.hInstance, NULL);
     if (gGameWindow == NULL) {
         Result = GetLastError();
         MessageBoxA(NULL, "Window creation failed.", "Error.", MB_ICONEXCLAMATION | MB_OK);
@@ -178,7 +183,7 @@ DWORD CreateMainGameWindow(void)
     gPerformanceData.MonitorWidth = gPerformanceData.MonitorInfo.rcMonitor.right - gPerformanceData.MonitorInfo.rcMonitor.left;
     gPerformanceData.MonitorHeight = gPerformanceData.MonitorInfo.rcMonitor.bottom - gPerformanceData.MonitorInfo.rcMonitor.top;
 
-    if (SetWindowLongPtrA(gGameWindow, GWL_STYLE, (WS_OVERLAPPEDWINDOW | WS_VISIBLE) & ~WS_OVERLAPPEDWINDOW) == 0) {
+    if (SetWindowLongPtrA(gGameWindow, GWL_STYLE, WS_VISIBLE) == 0) {
         Result = GetLastError();
         goto Exit;
     };
@@ -216,6 +221,20 @@ void ProcessPlayerInput(void)
 
 void RenderFrameGraphics(void) 
 {
+    PIXEL32 Pixel = { 0 };
+
+    Pixel.Blue = 0x7f;
+
+    Pixel.Green = 0;
+
+    Pixel.Red = 0;
+
+    Pixel.Alpha = 0xff;
+
+    for (int x = 0; x < GAME_RES_WIDTH * GAME_RES_HEIGHT; x++)
+    {
+        memcpy_s((PIXEL32*)gBackBuffer.Memory + x, sizeof(PIXEL32), &Pixel, sizeof(PIXEL32));
+    }
     // Whenever you get a device context, always remember to release when finished
     HDC DeviceContext = GetDC(gGameWindow);
     // DI = device independence
