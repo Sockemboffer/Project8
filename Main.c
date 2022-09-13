@@ -1,6 +1,7 @@
 #include <stdio.h>
-#pragma warning( push, 0 )
+#pragma warning( push, 3 )
 #include <windows.h>
+#include <emmintrin.h>
 #pragma warning( pop )
 #include <stdint.h>
 #include "Main.h" // My files come after windows.h (has important definitions that our .h needs)
@@ -33,6 +34,20 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
     int64_t ElapsedMicrosecondsPerFrameAccumulatorRaw = 0;
     int64_t ElapsedMicrosecondsPerFrameAccumulatorCooked = 0;
 
+    HMODULE NtDllModuleHandle;
+    if ((NtDllModuleHandle = GetModuleHandleA("ntdll.dll")) == NULL){
+        MessageBoxA(NULL, "The ndll.dll module was not found.", "Error.", MB_ICONEXCLAMATION | MB_OK);
+        goto Exit;
+    }
+
+    if ((NtQueryTimerResolution = (_NtQueryTimerResolution)GetProcAddress(NtDllModuleHandle, "NtQueryTimerResolution")) == NULL) {
+        MessageBoxA(NULL, "The NtQueryTimerResolution function in ntdll.dll was not found.", "Error.", MB_ICONEXCLAMATION | MB_OK);
+        goto Exit;
+    }
+
+    NtQueryTimerResolution(gPerformanceData.MinimumTimerResolution, gPerformanceData.MaximumTimerResolution, gPerformanceData.CurrentTimerResolution);
+
+
     if (GameIsAlreadyRunning() == TRUE) {
         MessageBoxA(NULL, "Another instance of the game is already running.", "Error.", MB_ICONEXCLAMATION | MB_OK);
         goto Exit;
@@ -42,8 +57,11 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
         goto Exit;
     }
 
+
     // Only needs to be called once
     QueryPerformanceFrequency((LARGE_INTEGER*)&gPerformanceData.PerfFrequency);
+
+    gPerformanceData.DisplayDebugInfo = TRUE;
 
     gBackBuffer.BitmapInfo.bmiHeader.biSize = sizeof(gBackBuffer.BitmapInfo.bmiHeader);
     gBackBuffer.BitmapInfo.bmiHeader.biWidth = GAME_RES_WIDTH;
@@ -83,29 +101,22 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
         // Sleep inside until we've hit frame rate target
         while (ElapsedMicrosecondsPerFrame <= TARGET_MICROSECONDS_PER_FRAME)
         {
-            Sleep(0); // Could be anywhere between 1ms to full system tick (15ms-ish)
             ElapsedMicrosecondsPerFrame = FrameEnd - FrameStart;
             ElapsedMicrosecondsPerFrame *= 1000000;
             ElapsedMicrosecondsPerFrame /= gPerformanceData.PerfFrequency;
             QueryPerformanceCounter((LARGE_INTEGER*)&FrameEnd);
+            if (ElapsedMicrosecondsPerFrame <= ((int64_t)TARGET_MICROSECONDS_PER_FRAME - gPerformanceData.CurrentTimerResolution))
+            {
+                Sleep(1); // Could be anywhere between 1ms to full system tick (15ms-ish)
+            }
         }
 
         ElapsedMicrosecondsPerFrameAccumulatorCooked += ElapsedMicrosecondsPerFrame;
 
         if ((gPerformanceData.TotalFramesRendered % CALCULATE_AVG_FPS_EVERY_X_FRAMES) == 0)
         {
-            int64_t AverageMicrosecondsPerFrameRaw = ElapsedMicrosecondsPerFrameAccumulatorRaw / CALCULATE_AVG_FPS_EVERY_X_FRAMES;
-            int64_t AverageMicrosecondsPerFrameCooked = ElapsedMicrosecondsPerFrameAccumulatorCooked / CALCULATE_AVG_FPS_EVERY_X_FRAMES;
-
             gPerformanceData.RawFPSAverage = 1.0f / ((ElapsedMicrosecondsPerFrameAccumulatorRaw / CALCULATE_AVG_FPS_EVERY_X_FRAMES) * 0.000001f);
             gPerformanceData.CookedFPSAverage = 1.0f / ((ElapsedMicrosecondsPerFrameAccumulatorCooked / CALCULATE_AVG_FPS_EVERY_X_FRAMES) * 0.000001f);
-            char FrameStats[256] = { 0 };
-            _snprintf_s(FrameStats, _countof(FrameStats), _TRUNCATE,
-                "Avg. Microseconds/frame raw: %lld\tAvg FPS: %.01f\tAvg. Raw: %.01f\n",
-                AverageMicrosecondsPerFrameRaw,
-                gPerformanceData.CookedFPSAverage, 
-                gPerformanceData.RawFPSAverage);
-            OutputDebugStringA(FrameStats);
             ElapsedMicrosecondsPerFrameAccumulatorRaw = 0;
             ElapsedMicrosecondsPerFrameAccumulatorCooked = 0;
         }
@@ -213,34 +224,91 @@ BOOL GameIsAlreadyRunning(void)
 void ProcessPlayerInput(void) 
 {
     int16_t EscapeKeyIsDown = GetAsyncKeyState(VK_ESCAPE);
+    int16_t DebugKeyIsDown = GetAsyncKeyState(VK_F1);
+    // If this static var was non-zero, the next time we come back to this function it remains non-zero
+    static int16_t DebugKeyWasDown; // static variable holds its value between calls to this function
     if (EscapeKeyIsDown)
     {
         SendMessageA(gGameWindow, WM_CLOSE, 0, 0);
     }
+    // Flickers due to key press flipping between true and false many times per second
+    // To prevent create new 
+    if (DebugKeyIsDown && !DebugKeyWasDown)
+    {
+        gPerformanceData.DisplayDebugInfo = !gPerformanceData.DisplayDebugInfo;
+    }
+    DebugKeyWasDown = DebugKeyIsDown;
 }
 
 void RenderFrameGraphics(void) 
 {
-    PIXEL32 Pixel = { 0 };
+    //PIXEL32 Pixel = { 0 };
 
-    Pixel.Blue = 0x7f;
+    //Pixel.Blue = 0x7f;
 
-    Pixel.Green = 0;
+    //Pixel.Green = 0;
 
-    Pixel.Red = 0;
+    //Pixel.Red = 0;
 
-    Pixel.Alpha = 0xff;
+    //Pixel.Alpha = 0xff;
+    __m128i QuadPixel = { 0x7f, 0x00, 0x00, 0xff, 0x7f, 0x00, 0x00, 0xff, 0x7f, 0x00, 0x00, 0xff, 0x7f, 0x00, 0x00, 0xff };
 
-    for (int x = 0; x < GAME_RES_WIDTH * GAME_RES_HEIGHT; x++)
+    ClearScreen(QuadPixel);
+
+    int32_t ScreenX = 25;
+    int32_t ScreenY = 25;
+    int32_t ScreenStartingPixel = ((GAME_RES_WIDTH * GAME_RES_HEIGHT) - GAME_RES_WIDTH) - \
+        (GAME_RES_WIDTH * ScreenY) + ScreenX;
+    
+    for (int32_t y = 0; y < 16; y++)
     {
-        memcpy_s((PIXEL32*)gBackBuffer.Memory + x, sizeof(PIXEL32), &Pixel, sizeof(PIXEL32));
+        for (int32_t x = 0; x < 16; x++)
+        {
+            memset((PIXEL32*)gBackBuffer.Memory + (uintptr_t)ScreenStartingPixel + x - ((uintptr_t)GAME_RES_WIDTH * y), 0xFF, sizeof(PIXEL32));
+        }
     }
+
     // Whenever you get a device context, always remember to release when finished
     HDC DeviceContext = GetDC(gGameWindow);
     // DI = device independence
-    StretchDIBits(DeviceContext, 0, 0,
-        gPerformanceData.MonitorWidth, gPerformanceData.MonitorHeight,
-        0, 0, GAME_RES_WIDTH, GAME_RES_HEIGHT, gBackBuffer.Memory, 
-        &gBackBuffer.BitmapInfo, DIB_RGB_COLORS, SRCCOPY);
+    StretchDIBits(DeviceContext,
+        0,
+        0,
+        gPerformanceData.MonitorWidth,
+        gPerformanceData.MonitorHeight,
+        0,
+        0, 
+        GAME_RES_WIDTH, 
+        GAME_RES_HEIGHT, 
+        gBackBuffer.Memory, 
+        &gBackBuffer.BitmapInfo, 
+        DIB_RGB_COLORS, 
+        SRCCOPY);
+
+    if (gPerformanceData.DisplayDebugInfo == TRUE)
+    {
+        SelectObject(DeviceContext, (HFONT)GetStockObject(ANSI_FIXED_FONT));
+        char DebugTextBuffer[64] = { 0 };
+        sprintf_s(DebugTextBuffer, sizeof(DebugTextBuffer), "FPS Raw:    %.01f", gPerformanceData.RawFPSAverage);
+        TextOutA(DeviceContext, 0, 0, DebugTextBuffer, (int)strlen(DebugTextBuffer));
+        sprintf_s(DebugTextBuffer, sizeof(DebugTextBuffer), "FPS Cooked: %.01f", gPerformanceData.CookedFPSAverage);
+        TextOutA(DeviceContext, 0, 13, DebugTextBuffer, (int)strlen(DebugTextBuffer));
+        sprintf_s(DebugTextBuffer, sizeof(DebugTextBuffer), "Timer Res Max: %.02f", gPerformanceData.MaximumTimerResolution / 10000.0f);
+        TextOutA(DeviceContext, 0, 26, DebugTextBuffer, (int)strlen(DebugTextBuffer));
+        sprintf_s(DebugTextBuffer, sizeof(DebugTextBuffer), "Timer Res Min: %.02f", gPerformanceData.MinimumTimerResolution / 10000.0f);
+        TextOutA(DeviceContext, 0, 39, DebugTextBuffer, (int)strlen(DebugTextBuffer));
+        sprintf_s(DebugTextBuffer, sizeof(DebugTextBuffer), "Timer Res Cur: %.02f", gPerformanceData.CurrentTimerResolution / 10000.0f);
+        TextOutA(DeviceContext, 0, 52, DebugTextBuffer, (int)strlen(DebugTextBuffer));
+    }
+
     ReleaseDC(gGameWindow, DeviceContext);
+}
+
+__forceinline void ClearScreen(_In_ __m128i Color){ // forceinline likely already happening
+    for (int x = 0; x < GAME_RES_WIDTH * GAME_RES_HEIGHT; x += 4)
+    {
+        // gBackBuffer.Memory[x] = Pixel; // burr recommended way
+        _mm_store_si128((PIXEL32*)gBackBuffer.Memory, Color);
+        //memcpy_s((PIXEL32*)gBackBuffer.Memory + x, sizeof(PIXEL32), &Pixel, sizeof(PIXEL32));
+    }
 }

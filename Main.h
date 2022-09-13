@@ -10,6 +10,11 @@
 
 #pragma warning(disable: 4820) // warning about structure padding
 #pragma warning(disable: 5045) // warning about spectors
+
+typedef LONG(NTAPI* _NtQueryTimerResolution) (OUT PULONG MinimumResolution, OUT PULONG MaximumResolution, OUT PULONG CurrentResolution);
+
+_NtQueryTimerResolution NtQueryTimerResolution;
+
 // Structure needs to be a factor of Structure Size to be perfectly alligned in memory
 typedef struct GAMEBITMAP {
 	BITMAPINFO BitmapInfo; // 44 bytes
@@ -32,6 +37,10 @@ typedef struct GAMEPERFDATA {
 	MONITORINFO MonitorInfo;
 	int32_t MonitorWidth;
 	int32_t MonitorHeight;
+	BOOL DisplayDebugInfo;
+	LONG MinimumTimerResolution;
+	LONG MaximumTimerResolution;
+	LONG CurrentTimerResolution;
 } GAMEPERFDATA;
 
 // Declarations
@@ -40,3 +49,5 @@ DWORD CreateMainGameWindow(void); // _In_ helps compiler watch for consistency o
 BOOL GameIsAlreadyRunning(void);
 void ProcessPlayerInput(void);
 void RenderFrameGraphics(void);
+// Future topic, pass by ref or pass by value
+void ClearScreen(_In_ __m128i Color);
