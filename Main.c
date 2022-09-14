@@ -1,5 +1,5 @@
-#include <stdio.h>
 #pragma warning( push, 3 )
+#include <stdio.h>
 #include <windows.h>
 #include <emmintrin.h>
 #pragma warning( pop )
@@ -45,7 +45,7 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
         goto Exit;
     }
 
-    NtQueryTimerResolution(gPerformanceData.MinimumTimerResolution, gPerformanceData.MaximumTimerResolution, gPerformanceData.CurrentTimerResolution);
+    NtQueryTimerResolution(&gPerformanceData.MaximumTimerResolution, &gPerformanceData.MinimumTimerResolution, &gPerformanceData.CurrentTimerResolution);
 
 
     if (GameIsAlreadyRunning() == TRUE) {
@@ -199,8 +199,13 @@ DWORD CreateMainGameWindow(void)
         goto Exit;
     };
     
-    if (SetWindowPos(gGameWindow, HWND_TOP, gPerformanceData.MonitorInfo.rcMonitor.left, gPerformanceData.MonitorInfo.rcMonitor.top,
-        gPerformanceData.MonitorWidth, gPerformanceData.MonitorHeight, SWP_FRAMECHANGED) == 0) {
+    if (SetWindowPos(gGameWindow,
+        HWND_TOP,
+        gPerformanceData.MonitorInfo.rcMonitor.left,
+        gPerformanceData.MonitorInfo.rcMonitor.top,
+        gPerformanceData.MonitorWidth,
+        gPerformanceData.MonitorHeight,
+        SWP_NOOWNERZORDER | SWP_FRAMECHANGED) == 0) {
         Result = GetLastError();
         goto Exit;
     };
@@ -251,6 +256,7 @@ void RenderFrameGraphics(void)
     //Pixel.Red = 0;
 
     //Pixel.Alpha = 0xff;
+
     __m128i QuadPixel = { 0x7f, 0x00, 0x00, 0xff, 0x7f, 0x00, 0x00, 0xff, 0x7f, 0x00, 0x00, 0xff, 0x7f, 0x00, 0x00, 0xff };
 
     ClearScreen(QuadPixel);
@@ -308,7 +314,7 @@ __forceinline void ClearScreen(_In_ __m128i Color){ // forceinline likely alread
     for (int x = 0; x < GAME_RES_WIDTH * GAME_RES_HEIGHT; x += 4)
     {
         // gBackBuffer.Memory[x] = Pixel; // burr recommended way
-        _mm_store_si128((PIXEL32*)gBackBuffer.Memory, Color);
+        _mm_store_si128((PIXEL32*)gBackBuffer.Memory + x, Color);
         //memcpy_s((PIXEL32*)gBackBuffer.Memory + x, sizeof(PIXEL32), &Pixel, sizeof(PIXEL32));
     }
 }
