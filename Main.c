@@ -1,3 +1,19 @@
+//yeah so that stuff on top, what it's doing is including sdkver first, which gives you the list of possible windows versions you nmight want to compile for.  Then it's making sure that WINVER is not defined so we can define it ourselves.WINVER is what tells the windows libraries what version of windows we want to build for.Then we're setting a few things.  The most important is settings WINVER to WINXP, but you might need to bump that up depending on what stuff this guy pulls in
+//mbcoder: _WIN32_WINNT_WIN8 is probably a good choice
+//[9:44 AM]mbcoder : since anythign earlier is not supported
+//[9:45 AM]mbcoder : VC_EXTRALEAN just prevents extra stuff in your build you don't need.  WIN32_LEAN_AND_MEAN prevents extra windows shit you don't need.NOMINMAX prevents the windows headers from defining MIN and MAX as macros, which is a thing they do that is stupid
+#pragma warning(push,0)
+#include <sdkddkver.h>
+#pragma warning(pop)
+
+#ifdef WINVER
+#undef WINVER
+#endif
+
+#define WINVER _WIN32_WINNT_WINXP
+#define VC_EXTRALEAN
+#define WIN32_LEAN_AND_MEAN
+#define NOMINMAX
 #pragma warning( push, 3 )
 #include <stdio.h>
 #include <windows.h>
@@ -10,8 +26,10 @@ HWND gGameWindow; // NULL or 0 by default
 BOOL gGameIsRunning; // global vars are automaticaly initialized to 0, no need to initialize unless you want somthing other than 0
 GAMEBITMAP gBackBuffer;
 GAMEPERFDATA gPerformanceData;
+PLAYER gPlayer;
 // Windows is native Unicode OS
-// L is Unicode string instead of ASCII (also called multi-byte sometimes)
+// TRUE -  L is wide string.  Unicode is an encoding standard.  Wide is just the size of each character in bytes.
+// FALSE - L is Unicode string instead of ASCII (also called multi-byte sometimes)
 // VS tip: C/C++ doesn't show up in properties until you have atleast one file of that type
 // %i type things are token or format specifier
 // handle is a memory address
@@ -30,9 +48,9 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
     MSG Message = { 0 };
     int64_t FrameStart = 0;
     int64_t FrameEnd = 0;
-	int64_t ElapsedMicrosecondsPerFrame;
-    int64_t ElapsedMicrosecondsPerFrameAccumulatorRaw = 0;
-    int64_t ElapsedMicrosecondsPerFrameAccumulatorCooked = 0;
+	int64_t ElapsedMicroseconds;
+    int64_t ElapsedMicrosecondsAccumulatorRaw = 0;
+    int64_t ElapsedMicrosecondsAccumulatorCooked = 0;
 
     HMODULE NtDllModuleHandle;
     if ((NtDllModuleHandle = GetModuleHandleA("ntdll.dll")) == NULL){
@@ -79,6 +97,9 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
 
     memset(gBackBuffer.Memory, 0x7F, GAME_DRAWING_AREA_MEMORY_SIZE);
 
+    gPlayer.WorldPosX = 25;
+    gPlayer.WorldPosY = 25;
+
     gGameIsRunning = TRUE;
     while (gGameIsRunning == TRUE) 
     {
@@ -92,33 +113,33 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
         ProcessPlayerInput();
         RenderFrameGraphics();
         QueryPerformanceCounter((LARGE_INTEGER*)&FrameEnd);
-        ElapsedMicrosecondsPerFrame = FrameEnd - FrameStart;
-        ElapsedMicrosecondsPerFrame *= 1000000;
-        ElapsedMicrosecondsPerFrame /= gPerformanceData.PerfFrequency;
+        ElapsedMicroseconds = FrameEnd - FrameStart;
+        ElapsedMicroseconds *= 1000000;
+        ElapsedMicroseconds /= gPerformanceData.PerfFrequency;
         gPerformanceData.TotalFramesRendered++;
-        ElapsedMicrosecondsPerFrameAccumulatorRaw += ElapsedMicrosecondsPerFrame;
+        ElapsedMicrosecondsAccumulatorRaw += ElapsedMicroseconds;
 
         // Sleep inside until we've hit frame rate target
-        while (ElapsedMicrosecondsPerFrame <= TARGET_MICROSECONDS_PER_FRAME)
+        while (ElapsedMicroseconds <= TARGET_MICROSECONDS_PER_FRAME)
         {
-            ElapsedMicrosecondsPerFrame = FrameEnd - FrameStart;
-            ElapsedMicrosecondsPerFrame *= 1000000;
-            ElapsedMicrosecondsPerFrame /= gPerformanceData.PerfFrequency;
+            ElapsedMicroseconds = FrameEnd - FrameStart;
+            ElapsedMicroseconds *= 1000000;
+            ElapsedMicroseconds /= gPerformanceData.PerfFrequency;
             QueryPerformanceCounter((LARGE_INTEGER*)&FrameEnd);
-            if (ElapsedMicrosecondsPerFrame <= ((int64_t)TARGET_MICROSECONDS_PER_FRAME - gPerformanceData.CurrentTimerResolution))
+            if (ElapsedMicroseconds <= ((int64_t)TARGET_MICROSECONDS_PER_FRAME - (gPerformanceData.CurrentTimerResolution * 0.1f)))
             {
                 Sleep(1); // Could be anywhere between 1ms to full system tick (15ms-ish)
             }
         }
 
-        ElapsedMicrosecondsPerFrameAccumulatorCooked += ElapsedMicrosecondsPerFrame;
+        ElapsedMicrosecondsAccumulatorCooked += ElapsedMicroseconds;
 
         if ((gPerformanceData.TotalFramesRendered % CALCULATE_AVG_FPS_EVERY_X_FRAMES) == 0)
         {
-            gPerformanceData.RawFPSAverage = 1.0f / ((ElapsedMicrosecondsPerFrameAccumulatorRaw / CALCULATE_AVG_FPS_EVERY_X_FRAMES) * 0.000001f);
-            gPerformanceData.CookedFPSAverage = 1.0f / ((ElapsedMicrosecondsPerFrameAccumulatorCooked / CALCULATE_AVG_FPS_EVERY_X_FRAMES) * 0.000001f);
-            ElapsedMicrosecondsPerFrameAccumulatorRaw = 0;
-            ElapsedMicrosecondsPerFrameAccumulatorCooked = 0;
+            gPerformanceData.RawFPSAverage = 1.0f / ((ElapsedMicrosecondsAccumulatorRaw / CALCULATE_AVG_FPS_EVERY_X_FRAMES) * 0.000001f);
+            gPerformanceData.CookedFPSAverage = 1.0f / ((ElapsedMicrosecondsAccumulatorCooked / CALCULATE_AVG_FPS_EVERY_X_FRAMES) * 0.000001f);
+            ElapsedMicrosecondsAccumulatorRaw = 0;
+            ElapsedMicrosecondsAccumulatorCooked = 0;
         }
     }
 Exit:
@@ -230,6 +251,15 @@ void ProcessPlayerInput(void)
 {
     int16_t EscapeKeyIsDown = GetAsyncKeyState(VK_ESCAPE);
     int16_t DebugKeyIsDown = GetAsyncKeyState(VK_F1);
+    int16_t LeftKeyIsDown = GetAsyncKeyState(VK_LEFT) | GetAsyncKeyState('A');
+    int16_t RightKeyIsDown = GetAsyncKeyState(VK_RIGHT) | GetAsyncKeyState('F');
+    int16_t UpKeyIsDown = GetAsyncKeyState(VK_UP) | GetAsyncKeyState('E');
+    int16_t DownKeyIsDown = GetAsyncKeyState(VK_DOWN) | GetAsyncKeyState('D');
+
+    static int16_t LeftKeyWasDown;
+    static int16_t RightKeyWasDown;
+    static int16_t UpKeyWasDown;
+    static int16_t DownKeyWasDown;
     // If this static var was non-zero, the next time we come back to this function it remains non-zero
     static int16_t DebugKeyWasDown; // static variable holds its value between calls to this function
     if (EscapeKeyIsDown)
@@ -238,31 +268,51 @@ void ProcessPlayerInput(void)
     }
     // Flickers due to key press flipping between true and false many times per second
     // To prevent create new 
-    if (DebugKeyIsDown && !DebugKeyWasDown)
+    if (DebugKeyIsDown)
     {
         gPerformanceData.DisplayDebugInfo = !gPerformanceData.DisplayDebugInfo;
     }
+    if (LeftKeyIsDown)
+    {
+        if (gPlayer.WorldPosX > 0){
+            gPlayer.WorldPosX--;
+        }
+    }
+    if (RightKeyIsDown)
+    {
+        if (gPlayer.WorldPosX < GAME_RES_WIDTH - 16) {
+            gPlayer.WorldPosX++;
+        }
+    }
+    if (DownKeyIsDown){
+        if (gPlayer.WorldPosY < GAME_RES_HEIGHT - 16) {
+            gPlayer.WorldPosY++;
+        }
+    }
+    if (UpKeyIsDown){
+        if (gPlayer.WorldPosY > 0){
+            gPlayer.WorldPosY--;
+        }
+    }
     DebugKeyWasDown = DebugKeyIsDown;
+    LeftKeyWasDown = LeftKeyIsDown;
+    RightKeyWasDown = RightKeyIsDown;
+    DownKeyWasDown = DownKeyIsDown;
+    UpKeyWasDown = UpKeyIsDown;
 }
 
 void RenderFrameGraphics(void) 
 {
-    //PIXEL32 Pixel = { 0 };
-
-    //Pixel.Blue = 0x7f;
-
-    //Pixel.Green = 0;
-
-    //Pixel.Red = 0;
-
-    //Pixel.Alpha = 0xff;
-
+#ifdef SIMD
     __m128i QuadPixel = { 0x7f, 0x00, 0x00, 0xff, 0x7f, 0x00, 0x00, 0xff, 0x7f, 0x00, 0x00, 0xff, 0x7f, 0x00, 0x00, 0xff };
+    ClearScreen(&QuadPixel);
+#else
+    PIXEL32 Pixel = { 0x7f, 0x00, 0x00, 0x7f };
+    ClearScreen(&Pixel);
+#endif
 
-    ClearScreen(QuadPixel);
-
-    int32_t ScreenX = 25;
-    int32_t ScreenY = 25;
+    int32_t ScreenX = gPlayer.WorldPosX;
+    int32_t ScreenY = gPlayer.WorldPosY;
     int32_t ScreenStartingPixel = ((GAME_RES_WIDTH * GAME_RES_HEIGHT) - GAME_RES_WIDTH) - \
         (GAME_RES_WIDTH * ScreenY) + ScreenX;
     
@@ -310,11 +360,21 @@ void RenderFrameGraphics(void)
     ReleaseDC(gGameWindow, DeviceContext);
 }
 
-__forceinline void ClearScreen(_In_ __m128i Color){ // forceinline likely already happening
-    for (int x = 0; x < GAME_RES_WIDTH * GAME_RES_HEIGHT; x += 4)
-    {
+// pre-compiler directives
+#ifdef SIMD
+__forceinline void ClearScreen(_In_ __m128i *Color){ // forceinline likely already happening
+    for (int x = 0; x < GAME_RES_WIDTH * GAME_RES_HEIGHT; x += 4){
         // gBackBuffer.Memory[x] = Pixel; // burr recommended way
-        _mm_store_si128((PIXEL32*)gBackBuffer.Memory + x, Color);
+        _mm_store_si128((PIXEL32*)gBackBuffer.Memory + x, &Color);
         //memcpy_s((PIXEL32*)gBackBuffer.Memory + x, sizeof(PIXEL32), &Pixel, sizeof(PIXEL32));
     }
 }
+#else
+__forceinline void ClearScreen(_In_ PIXEL32* Pixel) { // forceinline likely already happening
+    for (int x = 0; x < GAME_RES_WIDTH * GAME_RES_HEIGHT; x++) {
+        //gBackBuffer.Memory[x] = Pixel; // burr recommended way
+        memcpy((PIXEL32*)gBackBuffer.Memory + x, Pixel, sizeof(PIXEL32));
+        //memcpy_s((PIXEL32*)gBackBuffer.Memory + x, sizeof(PIXEL32), &Pixel, sizeof(PIXEL32));
+    }
+}
+#endif
