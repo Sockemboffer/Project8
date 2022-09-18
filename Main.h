@@ -5,7 +5,7 @@
 #define GAME_RES_HEIGHT 240
 #define GAME_BPP		32
 #define GAME_DRAWING_AREA_MEMORY_SIZE (GAME_RES_WIDTH * GAME_RES_HEIGHT * (GAME_BPP/8))
-#define CALCULATE_AVG_FPS_EVERY_X_FRAMES 160
+#define CALCULATE_AVG_FPS_EVERY_X_FRAMES 120
 #define TARGET_MICROSECONDS_PER_FRAME 16667
 #define SIMD
 
@@ -62,7 +62,7 @@ typedef struct PLAYER {
 	int32_t WorldPosY;
 	int32_t HP;
 	int32_t Strength;
-	int32_t Mana;
+	int32_t MP;
 }PLAYER;
 
 // Declarations

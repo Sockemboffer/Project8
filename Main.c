@@ -39,12 +39,12 @@ PLAYER gPlayer;
 // Game is single threaded, thread can be scheduled across multiple cpus
 // our game is  100% while looping takng up a single cpu going as fast as it can
 
-int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR CommandLine, INT CommandShow) // Input params from the OS
+int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR CommandLine, INT CmdShow) // Input params from the OS
 {
     UNREFERENCED_PARAMETER(Instance);
     UNREFERENCED_PARAMETER(PreviousInstance);
     UNREFERENCED_PARAMETER(CommandLine);
-    UNREFERENCED_PARAMETER(CommandShow);
+    UNREFERENCED_PARAMETER(CmdShow);
 
     MSG Message = { 0 };
     int64_t FrameStart = 0;
@@ -64,7 +64,7 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
         goto Exit;
     }
 
-    NtQueryTimerResolution(&gPerformanceData.MaximumTimerResolution, &gPerformanceData.MinimumTimerResolution, &gPerformanceData.CurrentTimerResolution);
+    NtQueryTimerResolution(&gPerformanceData.MinimumTimerResolution, &gPerformanceData.MaximumTimerResolution, &gPerformanceData.CurrentTimerResolution);
     GetSystemInfo(&gPerformanceData.SystemInfo);
 
     if (GameIsAlreadyRunning() == TRUE) {
@@ -121,13 +121,13 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
         ElapsedMicrosecondsAccumulatorRaw += ElapsedMicroseconds;
 
         // Sleep inside until we've hit frame rate target
-        while (ElapsedMicroseconds <= TARGET_MICROSECONDS_PER_FRAME)
+        while (ElapsedMicroseconds < TARGET_MICROSECONDS_PER_FRAME)
         {
             ElapsedMicroseconds = FrameEnd - FrameStart;
             ElapsedMicroseconds *= 1000000;
             ElapsedMicroseconds /= gPerformanceData.PerfFrequency;
             QueryPerformanceCounter((LARGE_INTEGER*)&FrameEnd);
-            if (ElapsedMicroseconds <= ((int64_t)TARGET_MICROSECONDS_PER_FRAME - (gPerformanceData.CurrentTimerResolution * 0.1f)) * 5)
+            if (ElapsedMicroseconds < ((int64_t)TARGET_MICROSECONDS_PER_FRAME - ((gPerformanceData.CurrentTimerResolution * 0.1f)) * 5))
             {
                 Sleep(1); // Could be anywhere between 1ms to full system tick (15ms-ish)
             }
@@ -144,7 +144,7 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
                 (FILETIME*) &gPerformanceData.CurrentKernelCPUTime,
                 (FILETIME*) &gPerformanceData.CurrentUserCPUTTime);
 
-            double Percent = (gPerformanceData.CurrentKernelCPUTime - gPerformanceData.PreviousKernelCPUTime) + \
+            gPerformanceData.CPUPercent = (gPerformanceData.CurrentKernelCPUTime - gPerformanceData.PreviousKernelCPUTime) + \
                 (gPerformanceData.CurrentUserCPUTTime - gPerformanceData.PreviousUserCPUTime);
 
                 gPerformanceData.CPUPercent /= (gPerformanceData.CurrentSystemTime - gPerformanceData.PreviousSystemTime);
@@ -379,9 +379,9 @@ void RenderFrameGraphics(void)
         TextOutA(DeviceContext, 0, 52, DebugTextBuffer, (int)strlen(DebugTextBuffer));
         sprintf_s(DebugTextBuffer, sizeof(DebugTextBuffer), "Handles: %lu", gPerformanceData.HandleCount);
         TextOutA(DeviceContext, 0, 65, DebugTextBuffer, (int)strlen(DebugTextBuffer));
-        sprintf_s(DebugTextBuffer, sizeof(DebugTextBuffer), "Memory:  %lu KB", gPerformanceData.MemInfo.PrivateUsage / 1024);
+        sprintf_s(DebugTextBuffer, sizeof(DebugTextBuffer), "Memory:  %llu KB", gPerformanceData.MemInfo.PrivateUsage / 1024);
         TextOutA(DeviceContext, 0, 78, DebugTextBuffer, (int)strlen(DebugTextBuffer));
-        sprintf_s(DebugTextBuffer, sizeof(DebugTextBuffer), "CPU:     %.0fG%%", gPerformanceData.CPUPercent);
+        sprintf_s(DebugTextBuffer, sizeof(DebugTextBuffer), "CPU:     %.02f%%", gPerformanceData.CPUPercent);
         TextOutA(DeviceContext, 0, 91, DebugTextBuffer, (int)strlen(DebugTextBuffer));
     }
 
