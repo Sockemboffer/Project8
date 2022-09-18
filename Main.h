@@ -5,9 +5,9 @@
 #define GAME_RES_HEIGHT 240
 #define GAME_BPP		32
 #define GAME_DRAWING_AREA_MEMORY_SIZE (GAME_RES_WIDTH * GAME_RES_HEIGHT * (GAME_BPP/8))
-#define CALCULATE_AVG_FPS_EVERY_X_FRAMES 100
+#define CALCULATE_AVG_FPS_EVERY_X_FRAMES 160
 #define TARGET_MICROSECONDS_PER_FRAME 16667
-//#define SIMD
+#define SIMD
 
 #pragma warning(disable: 4820) // warning about structure padding
 #pragma warning(disable: 5045) // warning about spectors
@@ -42,6 +42,18 @@ typedef struct GAMEPERFDATA {
 	ULONG MinimumTimerResolution;
 	ULONG MaximumTimerResolution;
 	ULONG CurrentTimerResolution;
+	DWORD HandleCount;
+	PROCESS_MEMORY_COUNTERS_EX MemInfo;
+	SYSTEM_INFO SystemInfo;
+	int64_t CurrentSystemTime;
+	int64_t PreviousSystemTime;
+	FILETIME ProcessCreationTime;
+	FILETIME ProcessExitTime;
+	int64_t CurrentUserCPUTTime;
+	int64_t CurrentKernelCPUTime;
+	int64_t PreviousUserCPUTime;
+	int64_t PreviousKernelCPUTime;
+	double CPUPercent;
 } GAMEPERFDATA;
 
 typedef struct PLAYER {
