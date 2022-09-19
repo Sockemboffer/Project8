@@ -30,7 +30,7 @@ HWND gGameWindow; // NULL or 0 by default
 BOOL gGameIsRunning; // global vars are automaticaly initialized to 0, no need to initialize unless you want somthing other than 0
 GAMEBITMAP gBackBuffer;
 GAMEPERFDATA gPerformanceData;
-PLAYER gPlayer;
+HERO gPlayer;
 BOOL gWindowHasFocus;
 // Windows is native Unicode OS
 // TRUE -  L is wide string.  Unicode is an encoding standard.  Wide is just the size of each character in bytes.
@@ -121,6 +121,7 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
     // Allocating larger than 64Kb of data, use VirtualAlloc (Use HeapAlloc if only need like 2 or 3 bytes)
     // VirtualAlloc returns NULL if fails, need to handle
     gBackBuffer.Memory = VirtualAlloc(NULL, GAME_DRAWING_AREA_MEMORY_SIZE, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
+
     if (gBackBuffer.Memory == NULL) {
         MessageBoxA(NULL, "Failed to allocate memory for drawing surface.", "Error.", MB_ICONEXCLAMATION | MB_OK);
         goto Exit;
@@ -128,8 +129,13 @@ int __stdcall WinMain(HINSTANCE Instance, HINSTANCE PreviousInstance, PSTR Comma
 
     memset(gBackBuffer.Memory, 0x7F, GAME_DRAWING_AREA_MEMORY_SIZE);
 
-    gPlayer.ScreenPosX = 25;
-    gPlayer.ScreenPosY = 25;
+    if (InitializeHero() != ERROR_SUCCESS)
+    {
+        MessageBoxA(NULL, "Failed to initialize Hero.", "Error.", MB_ICONEXCLAMATION | MB_OK);
+
+        goto Exit;
+    }
+
 
     gGameIsRunning = TRUE;
     while (gGameIsRunning == TRUE) 
@@ -278,7 +284,7 @@ DWORD CreateMainGameWindow(void)
         Result = GetLastError();
         goto Exit;
     };
-    
+
     if (SetWindowPos(gGameWindow,
         HWND_TOP,
         gPerformanceData.MonitorInfo.rcMonitor.left,
@@ -292,7 +298,7 @@ DWORD CreateMainGameWindow(void)
 Exit:
     return Result;
 }
-BOOL GameIsAlreadyRunning(void) 
+BOOL GameIsAlreadyRunning(void)
 {
     HANDLE Mutex = NULL; // Piece of memory used to gate access to resources (prevent multiple threads from writing to memory)
     // Once "I'm" done with mutex then you can have it
@@ -301,12 +307,12 @@ BOOL GameIsAlreadyRunning(void)
     Mutex = CreateMutexA(NULL, FALSE, GAME_NAME "_GameMutex");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         return TRUE;
-    } 
+    }
     else {
         return FALSE;
     }
 }
-void ProcessPlayerInput(void) 
+void ProcessPlayerInput(void)
 {
     if (gWindowHasFocus == FALSE)
     {
@@ -337,7 +343,7 @@ void ProcessPlayerInput(void)
     }
     if (LeftKeyIsDown)
     {
-        if (gPlayer.ScreenPosX > 0){
+        if (gPlayer.ScreenPosX > 0) {
             gPlayer.ScreenPosX--;
         }
     }
@@ -347,13 +353,13 @@ void ProcessPlayerInput(void)
             gPlayer.ScreenPosX++;
         }
     }
-    if (DownKeyIsDown){
+    if (DownKeyIsDown) {
         if (gPlayer.ScreenPosY < GAME_RES_HEIGHT - 16) {
             gPlayer.ScreenPosY++;
         }
     }
-    if (UpKeyIsDown){
-        if (gPlayer.ScreenPosY > 0){
+    if (UpKeyIsDown) {
+        if (gPlayer.ScreenPosY > 0) {
             gPlayer.ScreenPosY--;
         }
     }
@@ -362,6 +368,96 @@ void ProcessPlayerInput(void)
     RightKeyWasDown = RightKeyIsDown;
     DownKeyWasDown = DownKeyIsDown;
     UpKeyWasDown = UpKeyIsDown;
+}
+
+DWORD Load32BppBitmapFromFile(_In_ char* Filename, _Inout_ GAMEBITMAP* GameBitmap) {
+    DWORD Error = ERROR_SUCCESS;
+
+    HANDLE FileHandle = INVALID_HANDLE_VALUE;
+
+    WORD BitmapHeader = 0;
+
+    DWORD PixelDataOffset = 0;
+
+    DWORD NumberOfBytesRead = 2;
+
+    if ((Error = CreateFileA(Filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL)) != INVALID_HANDLE_VALUE) {
+        Error = GetLastError();
+        goto Exit;
+    }
+
+    if (ReadFile(FileHandle, &BitmapHeader, 2, &NumberOfBytesRead, NULL) == 0) {
+        Error = GetLastError();
+        goto Exit;
+    }
+
+    if (BitmapHeader != 0x4242) { //  "BM" backwards due to byte order(?)
+        Error = ERROR_FILE_INVALID;
+        goto Exit;
+    }
+
+    if (SetFilePointer(FileHandle, 0xA, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+        Error = GetLastError();
+
+        goto Exit;
+    }
+
+    if (ReadFile(FileHandle, &PixelDataOffset, sizeof(DWORD), &NumberOfBytesRead, NULL) == 0) {
+        Error = GetLastError();
+
+        goto Exit;
+    }
+
+    if (SetFilePointer(FileHandle, 0xE, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+        Error = GetLastError();
+
+        goto Exit;
+    }
+
+    if (ReadFile(FileHandle, &GameBitmap->BitmapInfo.bmiHeader, sizeof(BITMAPINFOHEADER), &NumberOfBytesRead, NULL) == 0) {
+        Error = GetLastError();
+
+        goto Exit;
+    }
+
+    if ((GameBitmap->Memory = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, GameBitmap->BitmapInfo.bmiHeader.biSizeImage)) == NULL) {
+        Error = ERROR_NOT_ENOUGH_MEMORY;
+        goto Exit;
+    }
+
+
+    if (SetFilePointer(FileHandle, PixelDataOffset, NULL, FILE_BEGIN) == INVALID_SET_FILE_POINTER) {
+        Error = GetLastError();
+
+        goto Exit;
+    }
+
+    if (ReadFile(FileHandle, &GameBitmap->Memory, GameBitmap->BitmapInfo.bmiHeader.biSizeImage, &NumberOfBytesRead, NULL) == 0) {
+        Error = GetLastError();
+
+        goto Exit;
+    }
+
+    //memcpy_s(GameBitmap->Memory, GameBitmap->BitmapInfo.bmiHeader.biSizeImage, 
+
+Exit:
+    if (FileHandle && FileHandle != INVALID_HANDLE_VALUE) {
+        CloseHandle(FileHandle);
+    }
+    return(Error);
+}
+
+DWORD InitializeHero(void) {
+    DWORD Error = ERROR_SUCCESS;
+    gPlayer.ScreenPosX = 25;
+    gPlayer.ScreenPosY = 25;
+    if ((Error = Load32BppBitmapFromFile("D:\\git\\GameB\\Assets\\Hero_Suit1_Down_Standing.bmpx", &gPlayer.Sprite[SUIT_0][FACING_DOWN_0])) != ERROR_SUCCESS) {
+        MessageBoxA(NULL, "Load32BppBitmapFromFile failed.", "Error.", MB_ICONEXCLAMATION | MB_OK);
+        goto Exit;
+    }
+
+Exit:
+    return(Error);
 }
 
 void RenderFrameGraphics(void) 
