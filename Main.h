@@ -84,6 +84,7 @@ void ProcessPlayerInput(void);
 // some functions may want you to allocate your own memory first, some may do it for you
 DWORD Load32BppBitmapFromFile(_In_ char* Filename, _Inout_ GAMEBITMAP* GameBitmap);
 DWORD InitializeHero(void);
+void Blit32BppBitmapToBuffer(_In_ GAMEBITMAP* GameBitmap, _In_ uint16_t x, _In_ uint16_t y);
 void RenderFrameGraphics(void);
 // Future topic, pass by ref or pass by value
 #ifdef SIMD
