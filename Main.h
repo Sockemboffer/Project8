@@ -25,7 +25,8 @@
 #define FACING_UPWARD_2 11
 
 #pragma warning(disable: 4820) // warning about structure padding
-#pragma warning(disable: 5045) // warning about spectors
+#pragma warning(disable: 5045) // warning about spectors6
+#pragma warning(disable: 4710)	// Disable warning about function not inlined
 
 typedef LONG(NTAPI* _NtQueryTimerResolution) (OUT PULONG MinimumResolution, OUT PULONG MaximumResolution, OUT PULONG CurrentResolution);
 

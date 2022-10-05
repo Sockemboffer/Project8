@@ -220,8 +220,8 @@ LRESULT CALLBACK MainWindowProc(_In_ HWND WindowHandle, _In_ UINT Message, _In_ 
             }
             else {
                 // Our window has gained focus
-                gWindowHasFocus = TRUE;
                 ShowCursor(FALSE);
+                gWindowHasFocus = TRUE;
             }
         }
         default: {
@@ -262,7 +262,7 @@ DWORD CreateMainGameWindow(void)
 
     gGameWindow = CreateWindowExA(0, WindowClass.lpszClassName, "Title",
         WS_VISIBLE, CW_USEDEFAULT,
-        CW_USEDEFAULT, 640, 480, NULL, NULL, WindowClass.hInstance, NULL);
+        CW_USEDEFAULT, 640, 480, NULL, NULL, GetModuleHandleA(NULL), NULL);
     if (gGameWindow == NULL) {
         Result = GetLastError();
         MessageBoxA(NULL, "Window creation failed.", "Error.", MB_ICONEXCLAMATION | MB_OK);
@@ -325,19 +325,20 @@ void ProcessPlayerInput(void)
     int16_t UpKeyIsDown = GetAsyncKeyState(VK_UP) | GetAsyncKeyState('E');
     int16_t DownKeyIsDown = GetAsyncKeyState(VK_DOWN) | GetAsyncKeyState('D');
 
+
+    static int16_t DebugKeyWasDown; // static variable holds its value between calls to this function
     static int16_t LeftKeyWasDown;
     static int16_t RightKeyWasDown;
     static int16_t UpKeyWasDown;
     static int16_t DownKeyWasDown;
     // If this static var was non-zero, the next time we come back to this function it remains non-zero
-    static int16_t DebugKeyWasDown; // static variable holds its value between calls to this function
     if (EscapeKeyIsDown)
     {
         SendMessageA(gGameWindow, WM_CLOSE, 0, 0);
     }
     // Flickers due to key press flipping between true and false many times per second
     // To prevent create new 
-    if (DebugKeyIsDown)
+    if (DebugKeyIsDown && !DebugKeyWasDown)
     {
         gPerformanceData.DisplayDebugInfo = !gPerformanceData.DisplayDebugInfo;
     }
@@ -366,11 +367,11 @@ void ProcessPlayerInput(void)
     DebugKeyWasDown = DebugKeyIsDown;
     LeftKeyWasDown = LeftKeyIsDown;
     RightKeyWasDown = RightKeyIsDown;
-    DownKeyWasDown = DownKeyIsDown;
     UpKeyWasDown = UpKeyIsDown;
+    DownKeyWasDown = DownKeyIsDown;
 }
 
-DWORD Load32BppBitmapFromFile(_In_ char* Filename, _Inout_ GAMEBITMAP* GameBitmap) {
+DWORD Load32BppBitmapFromFile(_In_ char* FileName, _Inout_ GAMEBITMAP* GameBitmap) {
     DWORD Error = ERROR_SUCCESS;
 
     HANDLE FileHandle = INVALID_HANDLE_VALUE;
@@ -381,7 +382,7 @@ DWORD Load32BppBitmapFromFile(_In_ char* Filename, _Inout_ GAMEBITMAP* GameBitma
 
     DWORD NumberOfBytesRead = 2;
 
-    if ((Error = CreateFileA(Filename, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL)) != INVALID_HANDLE_VALUE) {
+    if ((FileHandle = CreateFileA(FileName, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL)) == INVALID_HANDLE_VALUE){
         Error = GetLastError();
         goto Exit;
     }
@@ -391,7 +392,7 @@ DWORD Load32BppBitmapFromFile(_In_ char* Filename, _Inout_ GAMEBITMAP* GameBitma
         goto Exit;
     }
 
-    if (BitmapHeader != 0x4242) { //  "BM" backwards due to byte order(?)
+    if (BitmapHeader != 0x4d42) { //  "BM" backwards due to byte order(?)
         Error = ERROR_FILE_INVALID;
         goto Exit;
     }
@@ -432,7 +433,7 @@ DWORD Load32BppBitmapFromFile(_In_ char* Filename, _Inout_ GAMEBITMAP* GameBitma
         goto Exit;
     }
 
-    if (ReadFile(FileHandle, &GameBitmap->Memory, GameBitmap->BitmapInfo.bmiHeader.biSizeImage, &NumberOfBytesRead, NULL) == 0) {
+    if (ReadFile(FileHandle, GameBitmap->Memory, GameBitmap->BitmapInfo.bmiHeader.biSizeImage, &NumberOfBytesRead, NULL) == 0) {
         Error = GetLastError();
 
         goto Exit;
@@ -441,7 +442,7 @@ DWORD Load32BppBitmapFromFile(_In_ char* Filename, _Inout_ GAMEBITMAP* GameBitma
     //memcpy_s(GameBitmap->Memory, GameBitmap->BitmapInfo.bmiHeader.biSizeImage, 
 
 Exit:
-    if (FileHandle && FileHandle != INVALID_HANDLE_VALUE) {
+    if (FileHandle && (FileHandle != INVALID_HANDLE_VALUE)) {
         CloseHandle(FileHandle);
     }
     return(Error);
@@ -543,11 +544,9 @@ __forceinline void ClearScreen(_In_ __m128i* Color){ // forceinline likely alrea
     }
 }
 #else
-__forceinline void ClearScreen(_In_ PIXEL32* Pixel) { // forceinline likely already happening
+__forceinline void ClearScreen(_In_ PIXEL32* Pixel) {
     for (int x = 0; x < GAME_RES_WIDTH * GAME_RES_HEIGHT; x++) {
-        //gBackBuffer.Memory[x] = Pixel; // burr recommended way
         memcpy((PIXEL32*)gBackBuffer.Memory + x, Pixel, sizeof(PIXEL32));
-        //memcpy_s((PIXEL32*)gBackBuffer.Memory + x, sizeof(PIXEL32), &Pixel, sizeof(PIXEL32));
     }
 }
 #endif
@@ -569,7 +568,7 @@ void Blit32BppBitmapToBuffer(_In_ GAMEBITMAP* GameBitmap, _In_ uint16_t x, _In_ 
 
             if (BitmapPixel.Alpha == 255)
             {
-                memcpy_s((PIXEL32*)GameBitmap->Memory + MemoryOffset, sizeof(PIXEL32), &BitmapPixel, sizeof(PIXEL32));
+                memcpy_s((PIXEL32*)gBackBuffer.Memory + MemoryOffset, sizeof(PIXEL32), &BitmapPixel, sizeof(PIXEL32));
             }
         }
     }
